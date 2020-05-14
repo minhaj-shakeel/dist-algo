@@ -154,8 +154,8 @@ func main(){
   }
   
   //Initialising List of Processes
-  PList := make([] *Process ,5)
-  for i:=0;i<5;i++{
+  PList := make([] *Process ,N)
+  for i:=0;i<N;i++{
     PList[i] = NewProcess(N,i)
   }
   
