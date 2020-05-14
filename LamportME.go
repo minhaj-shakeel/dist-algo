@@ -1,11 +1,10 @@
 package main 
+
 import( "fmt"
         "sort"
         "time"
         "sync"
 )
-
-
 
 func max(a,b int) int {
   var ret int
@@ -86,7 +85,6 @@ func (p *Process) RecvRequest(ch1 []chan Pair , ch2 [] chan Pair){
     p.clock++
     p.mux.Unlock()
     ch2[curr] <- Pair{curr,p.clock}
-    fmt.Println("Reply sent from ",curr," to ",req.pid)
   }
 }
 
@@ -108,28 +106,22 @@ func (p *Process )RecvReply(ch2 [] chan Pair){
   wg.Wait()
 }
 
-
 func (p *Process) DoSomething(){
   fmt.Printf("Process %d Entered\n",p.pid)
-  time.Sleep(10*time.Second)
+  time.Sleep(5*time.Second)
   fmt.Printf("Process %d Exited\n",p.pid)
 }
-
-
-
 
 func (p *Process) SendRelease(ch3 []chan Pair){
   curr := p.pid
   p.mux.Lock()
   p.clock++
   p.mux.Unlock()
-  fmt.Println("sending release from ",curr,p.ReqQueue)
   for i,_ :=range ch3{
     if i!=curr{
       go func(i int){ch3[i] <- Pair{curr,p.clock} }(i)
     }
   }
-  fmt.Println("sent release from ",curr,p.ReqQueue)
   p.ReqQueue = p.ReqQueue[1:]
 }
 
@@ -138,7 +130,6 @@ func (p *Process) RecvRelease(ch3 []chan Pair , ch []chan bool){
   for{
     release:= <-ch3[curr]
     p.ReqQueue = p.ReqQueue[1:]
-    fmt.Println("after release from ",release.pid,curr,p.ReqQueue)
     p.mux.Lock()
     p.clock = max(p.clock,release.TimeStamp)+1
     p.mux.Unlock()
@@ -148,13 +139,11 @@ func (p *Process) RecvRelease(ch3 []chan Pair , ch []chan bool){
 
     if p.ReqQueue[0].pid == curr{
       ch[curr] <- true
-    } else{ ch[curr] <- false
-      }
+    }
   }
 }
 
-
-func (p *Process) AcquireLock(ch1,ch2,ch3 []chan Pair,ch []chan bool){
+func (p *Process) AcquireLock(ch1,ch2,ch3 []chan Pair,ch []chan bool,wg *sync.WaitGroup){
   p.SendRequest(ch1)
   p.RecvReply(ch2)
   for{
@@ -167,9 +156,8 @@ func (p *Process) AcquireLock(ch1,ch2,ch3 []chan Pair,ch []chan bool){
   p.DoSomething()
   p.inCS = false
   p.SendRelease(ch3)
-
+  wg.Done()
 }
-
 
 func main(){
   N:=5
@@ -193,29 +181,32 @@ func main(){
     ch3[i] = make(chan Pair)
   }
 
+  ch := make([] chan bool,N)
+  //Initialising Channels for Signal Sending and Receiving
+  for i,_ := range ch{
+    ch[i] = make(chan bool)
+  }
+  
   //Initialising List of Processes
   PList := make([] *Process,N)
   for  i:= 0;i < N ; i++{
     PList[i] = NewProcess(i)
   }
-
-  ch := make([] chan bool,N)
-  //Initialising Channels for Release Sending and Receiving
-  for i,_ := range ch{
-    ch[i] = make(chan bool)
-  }
-
   
   for i:=0;i<N;i++{
     go PList[i].RecvRequest(ch1,ch2)
     go PList[i].RecvRelease(ch3,ch)
   }
-  
-  go PList[0].AcquireLock(ch1,ch2,ch3,ch)
-  ch[0] <-true
-  go PList[1].AcquireLock(ch1,ch2,ch3,ch)
-  go PList[2].AcquireLock(ch1,ch2,ch3,ch)
-  go PList[3].AcquireLock(ch1,ch2,ch3,ch)
-  time.Sleep(100*time.Second)
 
+  var wg1 sync.WaitGroup
+  wg1.Add(1)
+  go PList[0].AcquireLock(ch1,ch2,ch3,ch,&wg1)
+  ch[0] <-true
+  wg1.Add(1)
+  go PList[1].AcquireLock(ch1,ch2,ch3,ch,&wg1)
+  wg1.Add(1)
+  go PList[2].AcquireLock(ch1,ch2,ch3,ch,&wg1)
+  wg1.Add(1)
+  go PList[3].AcquireLock(ch1,ch2,ch3,ch,&wg1)
+  wg1.Wait()
 }
