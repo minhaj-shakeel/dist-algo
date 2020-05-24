@@ -57,7 +57,12 @@ func (n *Node)Report() {
 }
 
 func (n *Node) ChangeRoot{
-  
+ if n.status[n.bestNode]=="branch"{
+  n.SendChannel[n.bestNode]<-msg{"changeRoot"}
+ } else{
+    n.status[n.bestNode]="branch"
+    n.SendChannel[n.bestNode]<-msg{"connect",n.level}
+ }
 }
 
 
@@ -70,7 +75,8 @@ func (n *Node) RecvReport(msgRecv msg , q  int){
    n.rec++
    n.Report()
   } else{
-    if n.state=="find"{
+    for {
+      if n.state!= "find" { break }
       /* Wait*/
     } else if msgRecv.bestWt>n.bestWt{
       n.ChangeRoot()
@@ -106,37 +112,9 @@ func (n *Node) FindMin(){
   }
 }
 
-func (n *Node) RecvTest(msgRecv msg , q int){
-  if n.level>msgRecv.level{
-    /*wait*/
-  } else if n.name==msgRecv.name{
-    if n.status[q]=="basic"{ n.status[q]=="reject"}
-    if q!=n.testNode{
-      n.SendChannel[q]<-msg{"reject"} 
-    } else{
-      n.FindMin()
-    }
-  } else{
-    n.SendChannel[q]<-msg{"accept"}
-  }
-}
 
 
-func (n *Node) RecvAccept(msgRecv msg, q int){
-  n.testNode=-1
-  if n.EdgeWeight[q] < n.bestWt{
-    n.bestWt=n.EdgeWeight[q]
-    n.bestNode=q
-  }
-  n.Report()
-}
 
-func (n *Node) RecvReject(msgRecv msg, q int){
-  if n.status[q]=="basic"{ 
-    n.status[q]="reject" 
-  }
-  n.FindMin()
-}
 
 func minIndex(EdgeWeight [] int) int{
   min:=0
@@ -160,8 +138,7 @@ func (n *Node) RecvMsg(){
   for q:=0;q<len(n.RecvChannel);q++{
     go func(i int){ msgRecv:=<-RecvChannel[i]
                     if msgRecv.name=="connect" {
-                      
-                    }    
+                    }
                   }(q)
   } 
 
@@ -201,6 +178,38 @@ func (n *Node) RecvInitiate(msgRecv msg , q int){
     n.rec=0
     n.FindMin()
   }
+}
+
+func (n *Node) RecvTest(msgRecv msg , q int){
+  /*Wait*/
+  for { if n.level!>msgRecv.level{ break} }
+
+   if n.name==msgRecv.name{
+    if n.status[q]=="basic"{ n.status[q]=="reject"}
+    if q!=n.testNode{
+      n.SendChannel[q]<-msg{"reject"} 
+    } else{
+      n.FindMin()
+    }
+  } else{
+    n.SendChannel[q]<-msg{"accept"}
+  }
+}
+
+func (n *Node) RecvAccept(msgRecv msg, q int){
+  n.testNode=-1
+  if n.EdgeWeight[q] < n.bestWt{
+    n.bestWt=n.EdgeWeight[q]
+    n.bestNode=q
+  }
+  n.Report()
+}
+
+func (n *Node) RecvReject(msgRecv msg, q int){
+  if n.status[q]=="basic"{ 
+    n.status[q]="reject" 
+  }
+  n.FindMin()
 }
 
 func main(){
