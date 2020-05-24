@@ -14,6 +14,7 @@ type msg struct{
   level int
   name string
   state string
+  bestWt int
 }
 
 type Node struct{
@@ -49,8 +50,92 @@ func NewNode(i int) *Node{
               }
 }
 
+
+func (n *Node)Report() {
+
+
+}
+
+func (n *Node) ChangeRoot{
+  
+}
+
+
+func (n *Node) RecvReport(msgRecv msg , q  int){
+  if q!=n.parent{
+   if msgRecv.bestWt<n.bestWt{
+    n.bestWt = msgRecv.bestWt
+    n.bestNode=q
+   }
+   n.rec++
+   n.Report()
+  } else{
+    if n.state=="find"{
+      /* Wait*/
+    } else if msgRecv.bestWt>n.bestWt{
+      n.ChangeRoot()
+    } else if msgRecv.bestWt==n.bestWt==1000{
+      /*Stop*/
+    }
+  }
+}
+
+
+func (n *Node) Minimal() int{
+  minWt:=1000
+  minIndex:=-1
+  for q:=0;q<len(q.EdgeList);q++{
+    if n.status[q]=="basic"{
+      if n.EdgeWeight[q]<minWt{
+        minIndex=q
+        minWt=n.EdgeWeight
+      }
+    }
+  }
+  return minIndex
+}
+
+
 //Minimum weighted edge in the Graph
 func (n *Node) FindMin(){
+  n.testNode=n.Minimal()
+  if testNode==-1{
+    n.Report()    
+  }else{
+    n.SendChannel[n.testNode]<-msg{"test",n.level,n.name}
+  }
+}
+
+func (n *Node) RecvTest(msgRecv msg , q int){
+  if n.level>msgRecv.level{
+    /*wait*/
+  } else if n.name==msgRecv.name{
+    if n.status[q]=="basic"{ n.status[q]=="reject"}
+    if q!=n.testNode{
+      n.SendChannel[q]<-msg{"reject"} 
+    } else{
+      n.FindMin()
+    }
+  } else{
+    n.SendChannel[q]<-msg{"accept"}
+  }
+}
+
+
+func (n *Node) RecvAccept(msgRecv msg, q int){
+  n.testNode=-1
+  if n.EdgeWeight[q] < n.bestWt{
+    n.bestWt=n.EdgeWeight[q]
+    n.bestNode=q
+  }
+  n.Report()
+}
+
+func (n *Node) RecvReject(msgRecv msg, q int){
+  if n.status[q]=="basic"{ 
+    n.status[q]="reject" 
+  }
+  n.FindMin()
 }
 
 func minIndex(EdgeWeight [] int) int{
