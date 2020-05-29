@@ -52,16 +52,23 @@ func NewNode(i int) *Node{
 
 
 func (n *Node)Report() {
-
-
+  count:=0
+  for q:=0;q<len(n.EdgeList);q++{
+    if n.status[q]=="branch" && q!=n.parent{count++}
+  }
+  
+  if n.rec==count && n.testNode==-1{
+    n.state="found"
+    n.SendChannel[n.parent]<-msg{Type:"report",bestWt:n.bestWt}
+  }
 }
 
-func (n *Node) ChangeRoot{
+func (n *Node) ChangeRoot(){
  if n.status[n.bestNode]=="branch"{
-  n.SendChannel[n.bestNode]<-msg{"changeRoot"}
+   n.SendChannel[n.bestNode]<-msg{Type:"changeRoot"}
  } else{
     n.status[n.bestNode]="branch"
-    n.SendChannel[n.bestNode]<-msg{"connect",n.level}
+    n.SendChannel[n.bestNode]<-msg{Type:"connect",level:n.level}
  }
 }
 
@@ -77,11 +84,12 @@ func (n *Node) RecvReport(msgRecv msg , q  int){
   } else{
     for {
       if n.state!= "find" { break }
-      /* Wait*/
-    } else if msgRecv.bestWt>n.bestWt{
+      /* Wait for state to change from find*/
+    }
+    if msgRecv.bestWt>n.bestWt{
       n.ChangeRoot()
-    } else if msgRecv.bestWt==n.bestWt==1000{
-      /*Stop*/
+    } else if msgRecv.bestWt==n.bestWt && n.bestWt==10000{
+      fmt.Println("Stop")
     }
   }
 }
@@ -90,11 +98,11 @@ func (n *Node) RecvReport(msgRecv msg , q  int){
 func (n *Node) Minimal() int{
   minWt:=1000
   minIndex:=-1
-  for q:=0;q<len(q.EdgeList);q++{
+  for q:=0;q<len(n.EdgeList);q++{
     if n.status[q]=="basic"{
       if n.EdgeWeight[q]<minWt{
         minIndex=q
-        minWt=n.EdgeWeight
+        minWt=n.EdgeWeight[q]
       }
     }
   }
@@ -105,10 +113,10 @@ func (n *Node) Minimal() int{
 //Minimum weighted edge in the Graph
 func (n *Node) FindMin(){
   n.testNode=n.Minimal()
-  if testNode==-1{
+  if n.testNode==-1{
     n.Report()    
   }else{
-    n.SendChannel[n.testNode]<-msg{"test",n.level,n.name}
+    n.SendChannel[n.testNode]<-msg{Type:"test",level:n.level,name:n.name}
   }
 }
 
@@ -126,35 +134,53 @@ func minIndex(EdgeWeight [] int) int{
   return min
 }
 
-func (n *Node)Init(){
-  minI := minIndex(n.EdgeWeight)
+func (n *Node)Initialise(){
+  minI := n.Minimal()
+  n.level = 0
+  n.state = "found"
+  n.rec =0
   n.status[minI] = "branch"
-  n.SendChannel[minI]<-msg{"INITIATE",0}
-  msgRecv:=<-RecvChannel[minI]
-
-
+  n.SendChannel[minI]<-msg{Type:"connect",level:0}
 }
+
 func (n *Node) RecvMsg(){
   for q:=0;q<len(n.RecvChannel);q++{
-    go func(i int){ msgRecv:=<-RecvChannel[i]
-                    if msgRecv.name=="connect" {
+    go func(i int){ 
+                    msgRecv:=<-n.RecvChannel[i]
+                    switch msgRecv.name {
+                      case "connect":
+                        n.RecvConnect(msgRecv,i)
+                      case "initiate":
+                        n.RecvInitiate(msgRecv,i)
+                      case "test":
+                        n.RecvTest(msgRecv,i)
+                      case "accept":
+                        n.RecvAccept(msgRecv,i)
+                      case "reject":
+                        n.RecvReject(msgRecv,i)
+                      case "report":
+                        n.RecvReport(msgRecv,i)
+                      case "changeRoot":
+                        n.ChangeRoot()
                     }
                   }(q)
-  } 
-
+  }
 }
+
 func (n *Node) RecvConnect(msgRecv msg,q int){
   L:=msgRecv.level
   if L<n.level{
     /*Combine with Rule LT*/
     n.status[q]="branch"
-    n.SendChannel[q]<-msg{"initiate",n.level,n.name,n.state}
-  } else if status[q]=="basic"{
-    /*wait*/
+    n.SendChannel[q]<-msg{"initiate",n.level,n.name,n.state,0}
+  } else if L>n.level{
+    for {
+      if n.status[q]!="basic" {break} //Wait for edge status to be changed
+    }
   } else {
     /*Combine with rule EQ*/
-    newname:=strconv.Itoa(n.Id)+strconv.Itoa(n.EdgeList[q])
-    n.SendChannel[q]<-msg{"initiate",n.level+1,newname,"find")}
+    newname:=strconv.Itoa(n.id)+strconv.Itoa(n.EdgeList[q])
+    n.SendChannel[q]<-msg{"initiate",n.level+1,newname,"find",0}
   }
 }
 
@@ -170,11 +196,13 @@ func (n *Node) RecvInitiate(msgRecv msg , q int){
 
   for r:=0;r<len(n.SendChannel);r++{
     if n.status[r]=="branch" && r!=q{
-      //change to concurrent send
-      n.SendChannel[r]<-msgRecv
+      //concurrent send to all neighbours except parent
+      go func(i int){
+        n.SendChannel[i]<-msgRecv
+      }(r)
     }
   }
-  if state =="find"{
+  if n.state =="find"{
     n.rec=0
     n.FindMin()
   }
@@ -182,17 +210,17 @@ func (n *Node) RecvInitiate(msgRecv msg , q int){
 
 func (n *Node) RecvTest(msgRecv msg , q int){
   /*Wait*/
-  for { if n.level!>msgRecv.level{ break} }
+  for { if n.level<= msgRecv.level{ break} }
 
    if n.name==msgRecv.name{
-    if n.status[q]=="basic"{ n.status[q]=="reject"}
+    if n.status[q]=="basic"{ n.status[q]="reject"}
     if q!=n.testNode{
-      n.SendChannel[q]<-msg{"reject"} 
+      n.SendChannel[q]<-msg{Type:"reject"} 
     } else{
       n.FindMin()
     }
   } else{
-    n.SendChannel[q]<-msg{"accept"}
+    n.SendChannel[q]<-msg{Type:"accept"}
   }
 }
 
@@ -213,7 +241,7 @@ func (n *Node) RecvReject(msgRecv msg, q int){
 }
 
 func main(){
-  file,_ := os.Open("sample-input.txt")
+  file,_ := os.Open("graph.txt")
   scanner := bufio.NewScanner(file)
   scanner.Split(bufio.ScanLines)
   
@@ -247,6 +275,9 @@ func main(){
     NodeList[n2].RecvChannel = append(NodeList[n2].RecvChannel,ch1)
 
   }
-
   file.Close()
+
+  for i:=0;i<len(NodeList);i++{
+    fmt.Println(NodeList[i].EdgeList)
+  }
 }
