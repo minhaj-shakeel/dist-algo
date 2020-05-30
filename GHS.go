@@ -8,6 +8,7 @@ import (
   "bufio"
   "strconv"
   "strings"
+  "time"
 )
 type msg struct{
   Type string
@@ -45,6 +46,7 @@ func NewNode(i int) *Node{
                level : 0,
                state : "SLEEP",
                rec : 0,
+               parent:-1,
                SendChannel : make([] chan msg,0),
                RecvChannel : make([] chan msg,0),
               }
@@ -56,7 +58,7 @@ func (n *Node)Report() {
   for q:=0;q<len(n.EdgeList);q++{
     if n.status[q]=="branch" && q!=n.parent{count++}
   }
-  
+  fmt.Println("calling Report ",n.id,count) 
   if n.rec==count && n.testNode==-1{
     n.state="found"
     n.SendChannel[n.parent]<-msg{Type:"report",bestWt:n.bestWt}
@@ -74,6 +76,7 @@ func (n *Node) ChangeRoot(){
 
 
 func (n *Node) RecvReport(msgRecv msg , q  int){
+  fmt.Println("report called",n.id,msgRecv,q,n.parent)
   if q!=n.parent{
    if msgRecv.bestWt<n.bestWt{
     n.bestWt = msgRecv.bestWt
@@ -114,7 +117,8 @@ func (n *Node) Minimal() int{
 func (n *Node) FindMin(){
   n.testNode=n.Minimal()
   if n.testNode==-1{
-    n.Report()    
+    n.Report() 
+    fmt.Println("No min",n.id,n.parent)
   }else{
     n.SendChannel[n.testNode]<-msg{Type:"test",level:n.level,name:n.name}
   }
@@ -135,33 +139,39 @@ func minIndex(EdgeWeight [] int) int{
 }
 
 func (n *Node)Initialise(){
-  minI := n.Minimal()
-  n.level = 0
-  n.state = "found"
-  n.rec =0
-  n.status[minI] = "branch"
-  n.SendChannel[minI]<-msg{Type:"connect",level:0}
+  if n.level == 0{
+   minI := n.Minimal()
+   n.level = 0
+   n.state = "found"
+   n.rec =0
+   n.status[minI] = "branch"
+   n.SendChannel[minI]<-msg{Type:"connect",level:0}
+  }
 }
 
 func (n *Node) RecvMsg(){
   for q:=0;q<len(n.RecvChannel);q++{
-    go func(i int){ 
-                    msgRecv:=<-n.RecvChannel[i]
-                    switch msgRecv.name {
-                      case "connect":
-                        n.RecvConnect(msgRecv,i)
-                      case "initiate":
-                        n.RecvInitiate(msgRecv,i)
-                      case "test":
-                        n.RecvTest(msgRecv,i)
-                      case "accept":
-                        n.RecvAccept(msgRecv,i)
-                      case "reject":
-                        n.RecvReject(msgRecv,i)
-                      case "report":
-                        n.RecvReport(msgRecv,i)
-                      case "changeRoot":
-                        n.ChangeRoot()
+    go func(i int){
+                   for{
+                     msgRecv:=<-n.RecvChannel[i]
+                     fmt.Printf("Msg received at Node: %d from Node: %d with EdgeWeight: %d\n",n.id ,n.EdgeList[i],n.EdgeWeight[i])
+                     fmt.Println(msgRecv)
+                     switch msgRecv.Type {
+                       case "connect":
+                         n.RecvConnect(msgRecv,i)
+                       case "initiate":
+                         n.RecvInitiate(msgRecv,i)
+                       case "test":
+                         n.RecvTest(msgRecv,i)
+                       case "accept":
+                         n.RecvAccept(msgRecv,i)
+                       case "reject":
+                         n.RecvReject(msgRecv,i)
+                       case "report":
+                         n.RecvReport(msgRecv,i)
+                       case "changeRoot":
+                         n.ChangeRoot()
+                     }
                     }
                   }(q)
   }
@@ -180,7 +190,10 @@ func (n *Node) RecvConnect(msgRecv msg,q int){
   } else {
     /*Combine with rule EQ*/
     newname:=strconv.Itoa(n.id)+strconv.Itoa(n.EdgeList[q])
-    n.SendChannel[q]<-msg{"initiate",n.level+1,newname,"find",0}
+    n.level++
+    n.name=newname
+    n.state="find"
+    n.SendChannel[q]<-msg{"initiate",n.level,newname,"find",0}
   }
 }
 
@@ -189,7 +202,6 @@ func (n *Node) RecvInitiate(msgRecv msg , q int){
   n.name  = msgRecv.name
   n.state = msgRecv.state
   n.parent = q
-  
   n.bestNode = -1
   n.bestWt = 100000
   n.testNode = -1
@@ -204,14 +216,16 @@ func (n *Node) RecvInitiate(msgRecv msg , q int){
   }
   if n.state =="find"{
     n.rec=0
+    fmt.Println("findmin called at Node ",n.id)
     n.FindMin()
   }
 }
 
 func (n *Node) RecvTest(msgRecv msg , q int){
   /*Wait*/
-  for { if n.level<= msgRecv.level{ break} }
-
+  fmt.Printf("test received at level %d from level %d\n",n.level,msgRecv.level)
+  for { if msgRecv.level <=n.level { break} }
+    fmt.Println(n.level,msgRecv.level)
    if n.name==msgRecv.name{
     if n.status[q]=="basic"{ n.status[q]="reject"}
     if q!=n.testNode{
@@ -220,6 +234,7 @@ func (n *Node) RecvTest(msgRecv msg , q int){
       n.FindMin()
     }
   } else{
+    fmt.Println("here")
     n.SendChannel[q]<-msg{Type:"accept"}
   }
 }
@@ -264,13 +279,13 @@ func main(){
     
     NodeList[n1].EdgeList = append(NodeList[n1].EdgeList,n2)
     NodeList[n1].EdgeWeight = append(NodeList[n1].EdgeWeight,w)
-    NodeList[n1].status = append(NodeList[n1].status,"UNUSED")
+    NodeList[n1].status = append(NodeList[n1].status,"basic")
     NodeList[n1].SendChannel = append(NodeList[n1].SendChannel,ch1)
     NodeList[n1].RecvChannel = append(NodeList[n1].RecvChannel,ch2)
     
     NodeList[n2].EdgeList = append(NodeList[n2].EdgeList,n1)
     NodeList[n2].EdgeWeight = append(NodeList[n2].EdgeWeight,w)
-    NodeList[n2].status = append(NodeList[n2].status,"UNUSED")
+    NodeList[n2].status = append(NodeList[n2].status,"basic")
     NodeList[n2].SendChannel = append(NodeList[n2].SendChannel,ch2)
     NodeList[n2].RecvChannel = append(NodeList[n2].RecvChannel,ch1)
 
@@ -278,6 +293,23 @@ func main(){
   file.Close()
 
   for i:=0;i<len(NodeList);i++{
-    fmt.Println(NodeList[i].EdgeList)
+    fmt.Println(NodeList[i].EdgeList,NodeList[i].EdgeWeight)
   }
+
+
+  for i:=0;i<N;i++{
+   go NodeList[i].RecvMsg()
+ }
+  
+  for i:=0;i<N;i++{
+    time.Sleep(time.Second)
+    go NodeList[i].Initialise()
+ }
+  time.Sleep(10*time.Second)
+  for i:=0;i<len(NodeList);i++{
+    fmt.Println(NodeList[i].parent,NodeList[i].EdgeList,NodeList[i].state,NodeList[i].status,NodeList[i].name,NodeList[i].level)
+  }
+
+  time.Sleep(1000*time.Second)
+
 }
